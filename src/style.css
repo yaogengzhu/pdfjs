@@ -5,7 +5,7 @@ html,body,#root{height:100%;overflow:hidden}body{overscroll-behavior:none}.app-s
 .textLayer{color-scheme:only light;overflow:clip;letter-spacing:normal;word-spacing:normal;caret-color:CanvasText;--min-font-size:1;--text-scale-factor:calc(var(--total-scale-factor) * var(--min-font-size));--min-font-size-inv:calc(1 / var(--min-font-size))}
 .textLayer :is(span,br){-webkit-user-select:text;user-select:text}
 .textLayer>:not(.markedContent),.textLayer .markedContent span:not(.markedContent){z-index:1;font-size:calc(var(--text-scale-factor) * var(--font-height));--scale-x:1;--rotate:0deg;transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv))}
-.textLayer .markedContent{display:contents}.textLayer br::selection{background:transparent}.textLayer ::selection{background:color-mix(in srgb,#d96d4e 35%,transparent);color:transparent}
+.textLayer .markedContent{display:contents}.textLayer br::selection{background:transparent}.textLayer ::selection{background:rgba(217,109,78,.25);color:transparent;-webkit-text-fill-color:transparent;transition:background .12s ease}
 .selection-pop{position:absolute;z-index:4;transform:translateX(-50%)}
 .selection-bar{display:flex;align-items:center;gap:2px;background:#fff;border:1px solid #e3d8d1;box-shadow:0 4px 14px rgba(58,38,28,.18);border-radius:8px;padding:3px}
 .selection-tool{display:flex;align-items:center;gap:4px;border:0;background:transparent;color:#6f6a64;border-radius:5px;padding:5px 9px;font-size:11.5px;font-weight:600;white-space:nowrap;font-family:inherit;cursor:pointer}

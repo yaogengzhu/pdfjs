@@ -80,7 +80,12 @@ html,body,#root{height:100%;overflow:hidden}body{overscroll-behavior:none}.app-s
 .ai-key-clear{border:0;background:transparent;color:#a8a39d;font-size:11px;cursor:pointer;text-decoration:underline}
 .ai-key-cancel{border:0;background:transparent;color:#a8a39d;font-size:11px;cursor:pointer;margin-left:auto}
 .ai-key-help{color:#c8836a;font-size:10px;text-decoration:none;margin-top:2px}
-.ai-messages{flex:1;min-height:0;overflow:auto;padding:18px 18px 8px;display:flex;flex-direction:column;gap:16px;overscroll-behavior:contain}
+.ai-messages{flex:1;min-height:0;overflow:auto;padding:18px 18px 8px;display:flex;flex-direction:column;gap:16px;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#e3ddd6 transparent}
+.ai-messages::-webkit-scrollbar{width:7px}
+.ai-messages::-webkit-scrollbar-track{background:transparent;margin:6px 0}
+.ai-messages::-webkit-scrollbar-thumb{background:#e3ddd6;border-radius:6px;border:2px solid transparent;background-clip:padding-box;transition:background .15s ease}
+.ai-messages::-webkit-scrollbar-thumb:hover{background:#cdbfb4;background-clip:padding-box}
+.ai-messages::-webkit-scrollbar-corner{background:transparent}
 .ai-empty{color:#b3aea8;font-size:12px;line-height:1.75;text-align:center;padding:32px 12px;border:1px dashed #ece8e3;border-radius:8px}
 .ai-msg{display:flex;flex-direction:column;gap:5px}
 .ai-msg-role{font-size:10px;color:#b6b1ab;font-family:'DM Mono',monospace;letter-spacing:.4px}

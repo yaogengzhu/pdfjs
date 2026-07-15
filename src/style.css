@@ -58,3 +58,69 @@ html,body,#root{height:100%;overflow:hidden}body{overscroll-behavior:none}.app-s
 .thumb-placeholder{color:#bdb8b2;font-size:11px;padding:30px 0}
 .thumb-page{font-family:'DM Mono',monospace;font-size:10px;color:#a8a39d}
 .thumb-page.active{color:#b0462c;font-weight:700}
+.ai-toggle.active{background:#f7ece5;color:#b0462c}
+.reader-area{position:relative}
+/* AI 面板：浮在 PDF 上方，不挤占文档宽度、不随文档滚动 */
+.ai-panel{position:fixed;top:64px;right:18px;height:calc(100vh - 90px);width:400px;max-width:calc(100vw - 36px);max-height:calc(100vh - 90px);min-height:280px;z-index:200;display:flex;flex-direction:column;background:#fff;border:1px solid #e7e3df;border-radius:12px;box-shadow:0 12px 40px rgba(31,24,19,.16),0 2px 8px rgba(31,24,19,.06);overflow:hidden;animation:ai-pop .16s ease}
+@keyframes ai-pop{from{opacity:0;transform:translateY(-6px) scale(.99)}to{opacity:1;transform:none}}
+.ai-header{height:46px;flex:0 0 46px;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px;border-bottom:1px solid #efece8;background:#fcfaf8;cursor:grab;user-select:none;touch-action:none}
+.ai-header:active{cursor:grabbing}
+.ai-panel.dragging{transition:none;cursor:grabbing;box-shadow:0 20px 50px rgba(31,24,19,.24)}
+.ai-title{display:flex;align-items:center;gap:8px;color:#4a4641;font-size:13px;font-weight:600;letter-spacing:.2px}
+.ai-title em{font-style:normal;font-family:Newsreader,Georgia,serif;font-weight:600}
+.ai-dot{width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,#b0462c,#e08a52)}
+.ai-close{margin-left:auto;width:28px;height:28px;color:#908b86;border-radius:6px}
+.ai-close:hover{background:#f1efec;color:#5d5a57}
+.ai-key-box{padding:12px 14px;border-bottom:1px solid #efece8;display:flex;flex-direction:column;gap:7px;background:#fdfcfa}
+.ai-key-box p{margin:0;font-size:11px;line-height:1.55;color:#8b8680}
+.ai-key-box input{border:1px solid #dedad6;border-radius:6px;padding:8px;font-size:12px;outline-color:#d36d50;font-family:'DM Mono',monospace}
+.ai-key-actions{display:flex;gap:8px;align-items:center}
+.ai-key-save{border:0;background:#ca6349;color:#fff;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:600;cursor:pointer}
+.ai-key-save:disabled{opacity:.5;cursor:default}
+.ai-key-clear{border:0;background:transparent;color:#a8a39d;font-size:11px;cursor:pointer;text-decoration:underline}
+.ai-key-cancel{border:0;background:transparent;color:#a8a39d;font-size:11px;cursor:pointer;margin-left:auto}
+.ai-key-help{color:#c8836a;font-size:10px;text-decoration:none;margin-top:2px}
+.ai-messages{flex:1;min-height:0;overflow:auto;padding:18px 18px 8px;display:flex;flex-direction:column;gap:16px;overscroll-behavior:contain}
+.ai-empty{color:#b3aea8;font-size:12px;line-height:1.75;text-align:center;padding:32px 12px;border:1px dashed #ece8e3;border-radius:8px}
+.ai-msg{display:flex;flex-direction:column;gap:5px}
+.ai-msg-role{font-size:10px;color:#b6b1ab;font-family:'DM Mono',monospace;letter-spacing:.4px}
+.ai-msg.user .ai-msg-role{color:#a8a39d}
+/* 学术风消息：无背景气泡，靠分割线与排版区分 */
+.ai-msg-content{font-size:13px;line-height:1.75;color:#3d3935;word-break:break-word}
+.ai-msg.user .ai-msg-content{color:#7d5a4c;font-style:italic}
+.ai-error{color:#b0462c;font-size:11px;line-height:1.55;background:#fbeee8;border-radius:6px;padding:8px 10px;border-left:3px solid #ca6349}
+/* —— Markdown 学术风排版 —— */
+.ai-msg-content.markdown>:first-child{margin-top:0}
+.ai-msg-content.markdown>:last-child{margin-bottom:0}
+.ai-msg-content.markdown h1,.ai-msg-content.markdown h2,.ai-msg-content.markdown h3,.ai-msg-content.markdown h4{font-family:Newsreader,Georgia,serif;color:#3d3935;font-weight:600;line-height:1.3;margin:1.1em 0 .5em}
+.ai-msg-content.markdown h1{font-size:18px}
+.ai-msg-content.markdown h2{font-size:16px;border-bottom:1px solid #efece8;padding-bottom:4px}
+.ai-msg-content.markdown h3{font-size:14px}
+.ai-msg-content.markdown p{margin:0 0 .7em}
+.ai-msg-content.markdown ul,.ai-msg-content.markdown ol{margin:0 0 .7em;padding-left:1.3em}
+.ai-msg-content.markdown li{margin:.2em 0}
+.ai-msg-content.markdown li::marker{color:#c8836a}
+.ai-msg-content.markdown strong{color:#4a4641;font-weight:600}
+.ai-msg-content.markdown em{color:#7d5a4c}
+.ai-msg-content.markdown a{color:#b0462c;text-decoration:none;border-bottom:1px solid #e8c4b5}
+.ai-msg-content.markdown blockquote{margin:0 0 .7em;padding:.2em 0 .2em .9em;border-left:3px solid #e8c4b5;color:#6f6a64;font-style:italic}
+.ai-msg-content.markdown code{font-family:'DM Mono',monospace;font-size:11.5px;background:#f4f2ef;padding:1px 5px;border-radius:3px;color:#9a3f28}
+.ai-msg-content.markdown pre{background:#faf8f5;border:1px solid #ece8e3;border-radius:6px;padding:10px 12px;margin:0 0 .7em;overflow:auto}
+.ai-msg-content.markdown pre code{background:none;padding:0;color:#3d3935;font-size:11.5px;line-height:1.6}
+.ai-msg-content.markdown hr{border:0;border-top:1px solid #efece8;margin:1em 0}
+.ai-msg-content.markdown table{border-collapse:collapse;margin:0 0 .7em;font-size:12px}
+.ai-msg-content.markdown th,.ai-msg-content.markdown td{border:1px solid #e7e3df;padding:4px 8px;text-align:left}
+.ai-msg-content.markdown th{background:#faf8f5;font-weight:600}
+.ai-input-bar{flex:0 0 auto;border-top:1px solid #efece8;padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:#fcfaf8}
+.ai-input-bar textarea{resize:none;border:1px solid #dedad6;border-radius:8px;padding:9px 11px;font-size:12.5px;line-height:1.55;outline-color:#d36d50;font-family:inherit;background:#fff}
+.ai-input-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ai-key-toggle{display:flex;align-items:center;gap:5px;border:0;background:transparent;color:#a8a39d;font-size:11px;cursor:pointer;padding:3px 5px;border-radius:5px}
+.ai-key-toggle:hover{background:#f1efec;color:#7d5a4c}
+.ai-key-toggle.set{color:#9a3f28}
+.ai-key-toggle.set svg{color:#b0462c}
+.ai-send{border:0;background:#ca6349;color:#fff;border-radius:7px;padding:7px 18px;font-size:12px;font-weight:600;cursor:pointer}
+.ai-send:disabled{opacity:.45;cursor:default}
+/* PDF 预览区悬浮的“全文摘要”按钮 */
+.summarize-btn{display:inline-flex;align-items:center;gap:5px;margin-left:10px;padding:5px 11px;border:1px solid #e6d8cd;background:#fdf7f2;color:#b0462c;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;transition:background .12s ease,border-color .12s ease}
+.summarize-btn:hover{background:#f9ebe1;border-color:#e0bfae}
+@media(max-width:800px){.ai-panel{width:calc(100vw - 24px);right:12px;left:12px;top:58px}.summarize-btn{display:none}}

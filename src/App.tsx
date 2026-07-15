@@ -3,6 +3,7 @@ import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy } fr
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import OutlinePanel from './OutlinePanel'
 import ThumbnailPanel from './ThumbnailPanel'
+import AiPanel, { type AiPanelHandle } from './AiPanel'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -12,7 +13,7 @@ const ZOOM_STEPS = [0.7, 0.85, 1, 1.15, 1.3, 1.5]
 type IconName =
   | 'search' | 'left' | 'right' | 'minus' | 'plus'
   | 'download' | 'upload' | 'copy' | 'more' | 'close' | 'file'
-  | 'list' | 'grid'
+  | 'list' | 'grid' | 'sparkle'
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   search: (
@@ -88,6 +89,9 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
       <rect x="14" y="14" width="7" height="7" rx="1" />
     </>
   ),
+  sparkle: (
+    <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
+  ),
 }
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -124,10 +128,11 @@ function normalizePdfText(value: string) {
 type TextSelection = { text: string; left: number; top: number }
 
 
-function PdfPage({ pdf, pageNumber, scale }: {
+function PdfPage({ pdf, pageNumber, scale, onExplain }: {
   pdf: PDFDocumentProxy
   pageNumber: number
   scale: number
+  onExplain?: (text: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const textLayerRef = useRef<HTMLDivElement>(null)
@@ -260,21 +265,25 @@ function PdfPage({ pdf, pageNumber, scale }: {
           className="selection-copy"
           style={{ left: selection.left, top: selection.top }}
           onMouseDown={(event) => event.preventDefault()}
-          onClick={() => void copySelectedText()}
+          onClick={() => {
+            if (onExplain) onExplain(selection.text)
+            else void copySelectedText()
+          }}
         >
-          <Icon name="copy" size={14} />
-          {copied ? '已复制' : '复制文字'}
+          {onExplain ? <Icon name="sparkle" size={14} /> : <Icon name="copy" size={14} />}
+          {onExplain ? 'AI 解释' : copied ? '已复制' : '复制文字'}
         </button>
       )}
     </article>
   )
 }
 
-function LazyPdfPage({ pdf, pageNumber, scale, scrollRoot }: {
+function LazyPdfPage({ pdf, pageNumber, scale, scrollRoot, onExplain }: {
   pdf: PDFDocumentProxy
   pageNumber: number
   scale: number
   scrollRoot: HTMLElement | null
+  onExplain?: (text: string) => void
 }) {
   const slotRef = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(pageNumber <= 2)
@@ -302,7 +311,7 @@ function LazyPdfPage({ pdf, pageNumber, scale, scrollRoot }: {
       style={{ '--page-scale': scale } as React.CSSProperties}
     >
       {visible ? (
-        <PdfPage pdf={pdf} pageNumber={pageNumber} scale={scale} />
+        <PdfPage pdf={pdf} pageNumber={pageNumber} scale={scale} onExplain={onExplain} />
       ) : (
         <div className="pdf-page-placeholder"><span>第 {pageNumber} 页</span></div>
       )}
@@ -323,10 +332,12 @@ export default function App() {
   const [search, setSearch] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [panelTab, setPanelTab] = useState<'outline' | 'thumbs'>('outline')
+  const [aiOpen, setAiOpen] = useState(false)
   const [fileName, setFileName] = useState('2607.11881.pdf')
 
   const fileInput = useRef<HTMLInputElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
+  const aiRef = useRef<AiPanelHandle>(null)
 
   // 加载 PDF 源（URL 或本地 blob），切换 source 时重新加载。
   useEffect(() => {
@@ -428,6 +439,28 @@ export default function App() {
     )
   }
 
+  // 悬浮摘要：确保 AI 面板已展开，再调用对应摘要动作
+  const triggerSummary = (mode: 'page' | 'all') => {
+    if (!aiOpen) setAiOpen(true)
+    requestAnimationFrame(() => {
+      // 面板挂载需要一帧，再延一帧调用
+      requestAnimationFrame(() => {
+        const handle = aiRef.current
+        if (!handle) return
+        if (mode === 'page') handle.summarizePage()
+        else handle.summarizeAll()
+      })
+    })
+  }
+
+  // 选中文字 → AI 解释：打开面板，把选中文本交给 AI
+  const explainSelection = (text: string) => {
+    if (!aiOpen) setAiOpen(true)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => aiRef.current?.explain(text))
+    })
+  }
+
   const openUrl = () => {
     if (!url.trim()) return
     setFileName(url.split('/').pop() || 'online-document.pdf')
@@ -488,6 +521,16 @@ export default function App() {
               <Icon name="file" size={17} />
               <span>{fileName}</span>
               <b />
+              {pdf && !error && (
+                <button
+                  type="button"
+                  className="summarize-btn"
+                  onClick={() => triggerSummary('all')}
+                  title="用 AI 生成全文摘要"
+                >
+                  <Icon name="sparkle" size={14} /> 全文摘要
+                </button>
+              )}
             </div>
             <div className="toolbar-controls">
               <div className="pager">
@@ -509,6 +552,9 @@ export default function App() {
                 <span>{Math.round(zoom * 100)}%</span>
                 <button onClick={() => updateZoom(1)}><Icon name="plus" size={16} /></button>
               </div>
+              <button className={`icon-button ai-toggle${aiOpen ? ' active' : ''}`} onClick={() => setAiOpen((v) => !v)} title="AI 助手" aria-label="AI 助手">
+                <Icon name="sparkle" size={17} />
+              </button>
               <button className="icon-button" onClick={download}><Icon name="download" /></button>
               <button className="icon-button"><Icon name="more" /></button>
             </div>
@@ -571,12 +617,23 @@ export default function App() {
                       pageNumber={index + 1}
                       scale={zoom}
                       scrollRoot={stageRef.current}
+                      onExplain={explainSelection}
                     />
                   ))}
                 </div>
               )}
             </div>
           </div>
+
+          {pdf && !error && (
+            <AiPanel
+              ref={aiRef}
+              pdf={pdf}
+              page={page}
+              visible={aiOpen}
+              onClose={() => setAiOpen(false)}
+            />
+          )}
         </section>
       </main>
 

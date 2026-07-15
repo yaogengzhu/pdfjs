@@ -2,6 +2,7 @@ import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import OutlinePanel from './OutlinePanel'
+import ThumbnailPanel from './ThumbnailPanel'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -11,7 +12,7 @@ const ZOOM_STEPS = [0.7, 0.85, 1, 1.15, 1.3, 1.5]
 type IconName =
   | 'search' | 'left' | 'right' | 'minus' | 'plus'
   | 'download' | 'upload' | 'copy' | 'more' | 'close' | 'file'
-  | 'list'
+  | 'list' | 'grid'
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   search: (
@@ -77,6 +78,14 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
       <path d="M3 6h.01" />
       <path d="M3 12h.01" />
       <path d="M3 18h.01" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
     </>
   ),
 }
@@ -312,7 +321,8 @@ export default function App() {
   const [zoom, setZoom] = useState(1)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState(false)
-  const [outlineOpen, setOutlineOpen] = useState(true)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [panelTab, setPanelTab] = useState<'outline' | 'thumbs'>('outline')
   const [fileName, setFileName] = useState('2607.11881.pdf')
 
   const fileInput = useRef<HTMLInputElement>(null)
@@ -407,6 +417,17 @@ export default function App() {
     )
   }
 
+  // 缩略图点击：只在目标页不可见时滚动最小距离，避免强制顶到顶部造成突兀
+  const goToPageSoft = (nextPage: number) => {
+    const target = Math.max(1, Math.min(pages, nextPage))
+    setPage(target)
+    requestAnimationFrame(() =>
+      stageRef.current
+        ?.querySelector<HTMLElement>(`[data-page-number="${target}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }),
+    )
+  }
+
   const openUrl = () => {
     if (!url.trim()) return
     setFileName(url.split('/').pop() || 'online-document.pdf')
@@ -457,8 +478,8 @@ export default function App() {
           <div className="reader-toolbar">
             <div className="document-name">
               <button
-                className={`icon-button outline-toggle${outlineOpen ? ' active' : ''}`}
-                onClick={() => setOutlineOpen((v) => !v)}
+                className={`icon-button outline-toggle${panelOpen ? ' active' : ''}`}
+                onClick={() => setPanelOpen((v) => !v)}
                 title="目录"
                 aria-label="目录"
               >
@@ -494,12 +515,39 @@ export default function App() {
           </div>
 
           <div className="reader-body">
-            {outlineOpen && pdf && !error && (
-              <OutlinePanel
-                pdf={pdf}
-                onNavigate={goToPage}
-                onClose={() => setOutlineOpen(false)}
-              />
+            {panelOpen && pdf && !error && (
+              <aside className="side-panel" role="navigation" aria-label="文档导航">
+                <div className="panel-tabs">
+                  <button
+                    type="button"
+                    className={`panel-tab${panelTab === 'outline' ? ' active' : ''}`}
+                    onClick={() => setPanelTab('outline')}
+                  >
+                    <Icon name="list" size={14} /> 目录
+                  </button>
+                  <button
+                    type="button"
+                    className={`panel-tab${panelTab === 'thumbs' ? ' active' : ''}`}
+                    onClick={() => setPanelTab('thumbs')}
+                  >
+                    <Icon name="grid" size={14} /> 缩略图
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button panel-close"
+                    onClick={() => setPanelOpen(false)}
+                    title="收起"
+                    aria-label="收起"
+                  >
+                    <Icon name="close" size={15} />
+                  </button>
+                </div>
+                <div className="panel-content">
+                  {panelTab === 'outline'
+                    ? <OutlinePanel pdf={pdf} onNavigate={goToPage} hideHeader />
+                    : <ThumbnailPanel pdf={pdf} pages={pages} page={page} onNavigate={goToPageSoft} hideHeader />}
+                </div>
+              </aside>
             )}
 
             <div className="document-stage" ref={stageRef}>

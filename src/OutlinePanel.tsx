@@ -148,9 +148,10 @@ export type OutlinePanelProps = {
   pdf: PDFDocumentProxy | null
   onNavigate: (pageNumber: number) => void
   onClose?: () => void
+  hideHeader?: boolean
 }
 
-export default function OutlinePanel({ pdf, onNavigate, onClose }: OutlinePanelProps) {
+export default function OutlinePanel({ pdf, onNavigate, onClose, hideHeader }: OutlinePanelProps) {
   const [nodes, setNodes] = useState<OutlineNode[]>([])
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
@@ -228,6 +229,32 @@ export default function OutlinePanel({ pdf, onNavigate, onClose }: OutlinePanelP
     return count(nodes)
   }, [nodes])
 
+  const body = loading ? (
+    <div className="outline-empty">正在读取目录…</div>
+  ) : nodes.length === 0 ? (
+    <div className="outline-empty">这份 PDF 没有内置目录</div>
+  ) : (
+    <ul className="outline-list root" role="tree">
+      {nodes.map((node, index) => (
+        <OutlineRow
+          key={`/${index}`}
+          node={node}
+          nodeKey={`/${index}`}
+          depth={0}
+          activeKey={activeKey}
+          expanded={expanded}
+          onNavigate={handleNavigate}
+          onToggle={toggle}
+        />
+      ))}
+    </ul>
+  )
+
+  // 嵌入模式：仅返回内容，外层容器与 header 由调用方提供
+  if (hideHeader) {
+    return <div className="outline-scroll">{body}</div>
+  }
+
   return (
     <aside className="outline-panel" role="navigation" aria-label="文档目录">
       <div className="outline-header">
@@ -241,28 +268,7 @@ export default function OutlinePanel({ pdf, onNavigate, onClose }: OutlinePanelP
           </button>
         )}
       </div>
-      <div className="outline-scroll">
-        {loading ? (
-          <div className="outline-empty">正在读取目录…</div>
-        ) : nodes.length === 0 ? (
-          <div className="outline-empty">这份 PDF 没有内置目录</div>
-        ) : (
-          <ul className="outline-list root" role="tree">
-            {nodes.map((node, index) => (
-              <OutlineRow
-                key={`/${index}`}
-                node={node}
-                nodeKey={`/${index}`}
-                depth={0}
-                activeKey={activeKey}
-                expanded={expanded}
-                onNavigate={handleNavigate}
-                onToggle={toggle}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
+      <div className="outline-scroll">{body}</div>
     </aside>
   )
 }

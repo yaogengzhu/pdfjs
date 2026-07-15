@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import OutlinePanel from './OutlinePanel'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -10,6 +11,7 @@ const ZOOM_STEPS = [0.7, 0.85, 1, 1.15, 1.3, 1.5]
 type IconName =
   | 'search' | 'left' | 'right' | 'minus' | 'plus'
   | 'download' | 'upload' | 'copy' | 'more' | 'close' | 'file'
+  | 'list'
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   search: (
@@ -67,6 +69,16 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
       <path d="M8 13h8M8 17h6" />
     </>
   ),
+  list: (
+    <>
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <path d="M3 6h.01" />
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+    </>
+  ),
 }
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -101,6 +113,7 @@ function normalizePdfText(value: string) {
 }
 
 type TextSelection = { text: string; left: number; top: number }
+
 
 function PdfPage({ pdf, pageNumber, scale }: {
   pdf: PDFDocumentProxy
@@ -299,6 +312,7 @@ export default function App() {
   const [zoom, setZoom] = useState(1)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState(false)
+  const [outlineOpen, setOutlineOpen] = useState(true)
   const [fileName, setFileName] = useState('2607.11881.pdf')
 
   const fileInput = useRef<HTMLInputElement>(null)
@@ -317,11 +331,20 @@ export default function App() {
       try {
         task = getDocument({ url: source })
         const doc = await task.promise
-        if (active) {
-          setPdf(doc)
-          setPages(doc.numPages)
-        }
-      } catch {
+        if (!active) return
+        const meta = await doc.getMetadata().catch(() => null)
+        const info = (meta?.info ?? {}) as Record<string, unknown>
+        console.log('[PDF] 文档加载完成:', {
+          source,
+          fingerprints: doc.fingerprints,
+          总页数: doc.numPages,
+          标题: (info.Title as string) ?? '(无)',
+          作者: (info.Author as string) ?? '(无)',
+        })
+        setPdf(doc)
+        setPages(doc.numPages)
+      } catch (cause) {
+        console.error('[PDF] 加载失败:', cause)
         if (active) setError('无法加载这份 PDF。请检查链接，或直接上传本地文件。')
       } finally {
         if (active) setLoading(false)
@@ -422,8 +445,6 @@ export default function App() {
           <div className="paper-id"><b /> PAPER</div>
           <h1>PDF 文档在线阅读</h1>
           <p className="paper-description">保留原始排版与可选择文字的浏览体验，适合论文、报告与长文档阅读。</p>
-          <div className="paper-meta">arXiv: 2607.11881　•　Jul 2026</div>
-          <div className="author-list"><span>Y</span>你的文档空间</div>
           <hr />
           <div className="side-section">
             <p>文档导航</p>
@@ -435,6 +456,14 @@ export default function App() {
         <section className="reader-area">
           <div className="reader-toolbar">
             <div className="document-name">
+              <button
+                className={`icon-button outline-toggle${outlineOpen ? ' active' : ''}`}
+                onClick={() => setOutlineOpen((v) => !v)}
+                title="目录"
+                aria-label="目录"
+              >
+                <Icon name="list" size={16} />
+              </button>
               <Icon name="file" size={17} />
               <span>{fileName}</span>
               <b />
@@ -464,31 +493,41 @@ export default function App() {
             </div>
           </div>
 
-          <div className="document-stage" ref={stageRef}>
-            {loading && (
-              <div className="loading-card"><i /><p>正在加载 PDF…</p></div>
+          <div className="reader-body">
+            {outlineOpen && pdf && !error && (
+              <OutlinePanel
+                pdf={pdf}
+                onNavigate={goToPage}
+                onClose={() => setOutlineOpen(false)}
+              />
             )}
-            {error && (
-              <div className="error-card">
-                <Icon name="file" size={28} />
-                <h2>暂时无法预览</h2>
-                <p>{error}</p>
-                <button onClick={() => setOpen(true)}>打开 PDF</button>
-              </div>
-            )}
-            {pdf && !error && (
-              <div className="pdf-scroll-list">
-                {Array.from({ length: pages }, (_, index) => (
-                  <LazyPdfPage
-                    key={`${index + 1}-${zoom}`}
-                    pdf={pdf}
-                    pageNumber={index + 1}
-                    scale={zoom}
-                    scrollRoot={stageRef.current}
-                  />
-                ))}
-              </div>
-            )}
+
+            <div className="document-stage" ref={stageRef}>
+              {loading && (
+                <div className="loading-card"><i /><p>正在加载 PDF…</p></div>
+              )}
+              {error && (
+                <div className="error-card">
+                  <Icon name="file" size={28} />
+                  <h2>暂时无法预览</h2>
+                  <p>{error}</p>
+                  <button onClick={() => setOpen(true)}>打开 PDF</button>
+                </div>
+              )}
+              {pdf && !error && (
+                <div className="pdf-scroll-list">
+                  {Array.from({ length: pages }, (_, index) => (
+                    <LazyPdfPage
+                      key={`${index + 1}-${zoom}`}
+                      pdf={pdf}
+                      pageNumber={index + 1}
+                      scale={zoom}
+                      scrollRoot={stageRef.current}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </main>

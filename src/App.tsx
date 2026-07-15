@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useRef, useState } from 'react'
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import OutlinePanel from './OutlinePanel'
@@ -120,7 +120,10 @@ function normalizePdfText(value: string) {
     .replace(/\r/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/([A-Za-z])-\n([a-z])/g, '$1$2')
-    .replace(/\n+/g, ' ')
+    .replace(/([A-Za-z0-9])\n([A-Za-z0-9])/g, '$1 $2')  // 英文/数字跨行：加空格
+    .replace(/([一-龥])\n([一-龥])/g, '$1$2')  // 中文跨行：不加空格
+    .replace(/[\t ]*\n[\t ]*/g, '\n')           // 换行周围空白归并
+    .replace(/\n{3,}/g, '\n\n')                  // 多空行压成最多一个空行
     .replace(/[ \t]{2,}/g, ' ')
     .trim()
 }
@@ -128,11 +131,11 @@ function normalizePdfText(value: string) {
 type TextSelection = { text: string; left: number; top: number }
 
 
-function PdfPage({ pdf, pageNumber, scale, onExplain }: {
+function PdfPage({ pdf, pageNumber, scale, onAsk }: {
   pdf: PDFDocumentProxy
   pageNumber: number
   scale: number
-  onExplain?: (text: string) => void
+  onAsk?: (text: string, prompt: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const textLayerRef = useRef<HTMLDivElement>(null)
@@ -140,7 +143,19 @@ function PdfPage({ pdf, pageNumber, scale, onExplain }: {
 
   const [error, setError] = useState(false)
   const [selection, setSelection] = useState<TextSelection | null>(null)
+  // selection 的 ref 镜像：effect deps 不含 selection，闭包里读 ref 拿到最新值
+  const selectionRef = useRef<TextSelection | null>(null)
+  const commitSelection = useCallback((next: TextSelection | null) => {
+    selectionRef.current = next
+    setSelection(next)
+  }, [])
   const [copied, setCopied] = useState(false)
+  // 选区 AI 输入框：点工具条「问AI」才展开
+  const [prompt, setPrompt] = useState('')
+  const [askOpen, setAskOpen] = useState(false)
+  const askInputRef = useRef<HTMLInputElement>(null)
+  // 正在拖选标记：拖选过程中不弹层，松手选区稳定后再显示（避免边选边弹/闪烁）
+  const selectingRef = useRef(false)
 
   // 渲染单页：canvas 绘制 + 文字层覆盖，缩放或翻页时重渲。
   useEffect(() => {
@@ -202,6 +217,7 @@ function PdfPage({ pdf, pageNumber, scale, onExplain }: {
     const pageElement = pageRef.current
     if (!layer || !pageElement) return
 
+    // 用当前原生选区计算并【显示】弹层。只在「应该显示」的时机调用（mouseup 后等）。
     const syncSelection = () => {
       const browserSelection = window.getSelection()
       if (
@@ -210,29 +226,53 @@ function PdfPage({ pdf, pageNumber, scale, onExplain }: {
         !browserSelection.anchorNode ||
         !layer.contains(browserSelection.anchorNode)
       ) {
-        setSelection(null)
-        return
+        return // 无有效选区：这里不主动清空。清空交给明确取消动作。
       }
+      if (selectingRef.current) return // 拖选中：不弹，等松手
 
       const text = normalizePdfText(browserSelection.toString())
-      if (!text) {
-        setSelection(null)
-        return
-      }
+      if (!text) return
 
       const rect = browserSelection.getRangeAt(0).getBoundingClientRect()
       const pageRect = pageElement.getBoundingClientRect()
-      setSelection({
-        text,
-        left: Math.max(10, Math.min(rect.left - pageRect.left + rect.width / 2, pageRect.width - 54)),
-        top: Math.max(8, rect.top - pageRect.top - 42),
-      })
+      const halfWidth = onAsk ? 150 : 44 // 弹层预估半宽（ask 模式 ~300/2，纯复制按钮更窄）
+      const popH = onAsk ? 96 : 40       // 弹层预估高度，用于上方回退判定
+      const gap = 8
+
+      // 水平：居中于选区中心，clamp 不溢出页面左右
+      const centerX = rect.left - pageRect.left + rect.width / 2
+      const left = Math.max(halfWidth + 4, Math.min(centerX, pageRect.width - halfWidth - 4))
+
+      // 垂直：默认在选区【下方】（贴近释放点），下方空间不足则回退【上方】
+      const belowTop = rect.bottom - pageRect.top + gap
+      const aboveTop = rect.top - pageRect.top - gap - popH
+      // 保守判定：下方空间要 >= popH + 20px 余量，避免溢出压到下一页
+      const useBelow = belowTop + popH + 20 <= pageRect.height
+      const top = Math.max(8, useBelow ? belowTop : aboveTop)
+
+      commitSelection({ text, left, top })
       setCopied(false)
+    }
+
+    // 明确取消：集中一处关弹层
+    const clearSelection = () => {
+      commitSelection(null)
+      setPrompt('')
+      setAskOpen(false)
     }
 
     const handleCopy = (event: ClipboardEvent) => {
       const browserSelection = window.getSelection()
-      if (!browserSelection?.anchorNode || !layer.contains(browserSelection.anchorNode)) return
+      // input 打字可能让原生选区塌缩：弹层仍在时，回退用已固化的 selection.text
+      if (!browserSelection?.anchorNode || !layer.contains(browserSelection.anchorNode)) {
+        const fixed = selectionRef.current?.text
+        if (fixed) {
+          event.preventDefault()
+          event.clipboardData?.setData('text/plain', fixed)
+          setCopied(true)
+        }
+        return
+      }
       const text = normalizePdfText(browserSelection.toString())
       if (!text) return
       event.preventDefault()
@@ -240,13 +280,61 @@ function PdfPage({ pdf, pageNumber, scale, onExplain }: {
       setCopied(true)
     }
 
-    document.addEventListener('selectionchange', syncSelection)
+    // 开始拖选 / 双击：标记拖选中，并关掉旧弹层让位
+    const onDown = () => {
+      selectingRef.current = true
+      clearSelection()
+    }
+    const onUp = () => {
+      selectingRef.current = false
+      // 延迟一帧再同步，避开双击第二次 mousedown 的时序窗口，防止提前弹层闪烁
+      requestAnimationFrame(() => {
+        if (!selectingRef.current) syncSelection()
+      })
+    }
+
+    // selectionchange：拖选中或弹层已开 → 不动 state；否则尝试用当前选区显示
+    const onSelectionChange = () => {
+      if (selectingRef.current) return
+      if (selectionRef.current) return // 弹层已开，不因塌缩清空（修复 input 打字关闭弹层）
+      syncSelection()
+    }
+
+    // 点击弹层外空白收起（mousedown 落在 layer 外 且 弹层外）
+    const isInsidePopover = (target: EventTarget | null): boolean => {
+      if (!(target instanceof Node)) return false
+      return !!(target as HTMLElement).closest?.('.selection-pop')
+    }
+    const onDocDown = (event: MouseEvent | TouchEvent) => {
+      if (!selectionRef.current) return
+      const target = (event as MouseEvent).target
+      if (target instanceof Node && layer.contains(target)) return // layer 内交给 onDown
+      if (isInsidePopover(target)) return // 弹层内：JSX 已 stopPropagation，兜底
+      clearSelection()
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selectionRef.current) clearSelection()
+    }
+
+    document.addEventListener('selectionchange', onSelectionChange)
+    layer.addEventListener('mousedown', onDown)
+    document.addEventListener('mouseup', onUp)
+    document.addEventListener('mousedown', onDocDown)
+    document.addEventListener('touchstart', onDocDown, { passive: true }) // 移动端点空白收起
+    document.addEventListener('keydown', onKeyDown)
     layer.addEventListener('copy', handleCopy)
     return () => {
-      document.removeEventListener('selectionchange', syncSelection)
+      document.removeEventListener('selectionchange', onSelectionChange)
+      layer.removeEventListener('mousedown', onDown)
+      document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('touchstart', onDocDown)
+      document.removeEventListener('keydown', onKeyDown)
       layer.removeEventListener('copy', handleCopy)
+      clearSelection() // 翻页/缩放重挂：收起弹层，避免坐标错位
     }
-  }, [pageNumber, scale])
+  }, [pageNumber, scale, onAsk, commitSelection])
 
   const copySelectedText = async () => {
     if (!selection) return
@@ -261,29 +349,114 @@ function PdfPage({ pdf, pageNumber, scale, onExplain }: {
       <canvas ref={canvasRef} />
       <div className="textLayer" ref={textLayerRef} />
       {selection && (
-        <button
-          className="selection-copy"
+        <div
+          className="selection-pop"
           style={{ left: selection.left, top: selection.top }}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            if (onExplain) onExplain(selection.text)
-            else void copySelectedText()
-          }}
+          onMouseDown={(e) => e.stopPropagation()}
         >
-          {onExplain ? <Icon name="sparkle" size={14} /> : <Icon name="copy" size={14} />}
-          {onExplain ? 'AI 解释' : copied ? '已复制' : '复制文字'}
-        </button>
+          {onAsk && askOpen ? (
+            // 展开态：输入框（点「问AI」后出现）
+            <div className="selection-ask">
+              <div className="selection-ask-presets">
+                {['解释这段', '翻译为中文', '提炼要点'].map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className="selection-preset"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      onAsk(selection.text, p)
+                      setPrompt('')
+                      setAskOpen(false)
+                    }}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <input
+                ref={askInputRef}
+                className="selection-ask-input"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    if (onAsk) {
+                      onAsk(selection.text, prompt)
+                      setPrompt('')
+                      setAskOpen(false)
+                    }
+                  }
+                  if (e.key === 'Escape') {
+                    setAskOpen(false)
+                    setPrompt('')
+                  }
+                }}
+                placeholder="问点什么…（回车发送，Esc 收起）"
+              />
+            </div>
+          ) : (
+            // 默认态：轻量工具条（图标按钮，preventDefault 不破坏选中高亮）
+            <div className="selection-bar">
+              <button
+                type="button"
+                className="selection-tool"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void copySelectedText()}
+                title="复制选中文字"
+              >
+                <Icon name="copy" size={14} />
+                {copied ? '已复制' : '复制'}
+              </button>
+              {onAsk && (
+                <>
+                  <span className="selection-tool-sep" />
+                  {[
+                    { label: '解释', prompt: '解释这段' },
+                    { label: '翻译', prompt: '翻译为中文' },
+                    { label: '要点', prompt: '提炼要点' },
+                  ].map((a) => (
+                    <button
+                      key={a.label}
+                      type="button"
+                      className="selection-tool"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => onAsk(selection.text, a.prompt)}
+                      title={a.prompt}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                  <span className="selection-tool-sep" />
+                  <button
+                    type="button"
+                    className="selection-tool primary"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setAskOpen(true)
+                      requestAnimationFrame(() => askInputRef.current?.focus())
+                    }}
+                    title="自定义提问"
+                  >
+                    <Icon name="sparkle" size={14} /> 问 AI
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </article>
   )
 }
 
-function LazyPdfPage({ pdf, pageNumber, scale, scrollRoot, onExplain }: {
+function LazyPdfPage({ pdf, pageNumber, scale, scrollRoot, onAsk }: {
   pdf: PDFDocumentProxy
   pageNumber: number
   scale: number
   scrollRoot: HTMLElement | null
-  onExplain?: (text: string) => void
+  onAsk?: (text: string, prompt: string) => void
 }) {
   const slotRef = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(pageNumber <= 2)
@@ -311,7 +484,7 @@ function LazyPdfPage({ pdf, pageNumber, scale, scrollRoot, onExplain }: {
       style={{ '--page-scale': scale } as React.CSSProperties}
     >
       {visible ? (
-        <PdfPage pdf={pdf} pageNumber={pageNumber} scale={scale} onExplain={onExplain} />
+        <PdfPage pdf={pdf} pageNumber={pageNumber} scale={scale} onAsk={onAsk} />
       ) : (
         <div className="pdf-page-placeholder"><span>第 {pageNumber} 页</span></div>
       )}
@@ -453,11 +626,11 @@ export default function App() {
     })
   }
 
-  // 选中文字 → AI 解释：打开面板，把选中文本交给 AI
-  const explainSelection = (text: string) => {
+  // 选中文字 → 打开面板，用用户自写的 prompt（或预设）处理选中文本
+  const askSelection = (text: string, prompt: string) => {
     if (!aiOpen) setAiOpen(true)
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => aiRef.current?.explain(text))
+      requestAnimationFrame(() => aiRef.current?.askWithPrompt(text, prompt))
     })
   }
 
@@ -497,7 +670,7 @@ export default function App() {
       <main className="workspace">
         <aside className="sidebar">
           <div className="paper-id"><b /> PAPER</div>
-          <h1>PDF 文档在线阅读</h1>
+          <h1>AI在线阅读</h1>
           <p className="paper-description">保留原始排版与可选择文字的浏览体验，适合论文、报告与长文档阅读。</p>
           <hr />
           <div className="side-section">
@@ -617,7 +790,7 @@ export default function App() {
                       pageNumber={index + 1}
                       scale={zoom}
                       scrollRoot={stageRef.current}
-                      onExplain={explainSelection}
+                      onAsk={askSelection}
                     />
                   ))}
                 </div>
